@@ -11,6 +11,7 @@
 *.log
 .mypy_cache
 *.pdf
+!provas-pdf/*.pdf
 \output_2023
 test.py
 \gen-provas
