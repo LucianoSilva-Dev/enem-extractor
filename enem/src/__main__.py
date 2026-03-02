@@ -23,6 +23,30 @@ Day 1 -> Linguagens, Códigos e suas Tecnologias
 Day 2 -> Ciências da Natureza e suas Tecnologias + Matemática e suas Tecnologias
 """
 
+def _save_question(questions: list, actual_question, question_content: list, question_alternatives: dict) -> None:
+    """
+    Helper to save a completed question to the questions list.
+    Only saves if the question has content and at least one alternative.
+    """
+    if actual_question is not None and question_content and question_alternatives:
+        questions.append({
+            "number": actual_question,
+            "content": question_content,
+            "alternatives": question_alternatives
+        })
+
+
+def _has_alternative_content(question_alternatives: dict) -> bool:
+    """
+    Check if the last alternative (E, index 4) has any content (text or image).
+    Used to detect end-of-question for image-only alternatives.
+    """
+    last_alt = question_alternatives.get(len(question_alternatives) - 1)
+    if last_alt and last_alt["alternative_value"] == 4 and last_alt["content"]:
+        return True
+    return False
+
+
 def extractor(file_pdf_path: str, root_path: str, test_answer_key_path: Optional[str] = None, minimal:bool = False) -> Optional[tuple]:
     """
     This function is the main function of the application.
@@ -66,9 +90,13 @@ def extractor(file_pdf_path: str, root_path: str, test_answer_key_path: Optional
                         text = span["text"]
 
                         if "questão" in text.lower() and valid_question_number(text):
-                            # question found
+                            # New question found — save the previous one if still open
+                            if actual_question is not None and question_alternatives:
+                                _save_question(questions, actual_question, question_content, question_alternatives)
+
                             actual_question = parse_question_number(text)
                             question_content = []
+                            question_alternatives = {}
 
                             if day is None and isinstance(DAY_SPLIT, int) and DAY_SPLIT > 0 and isinstance(actual_question, int):
                                 if actual_question > DAY_SPLIT and actual_question <= QUESTION_RANGE[1]:
@@ -122,11 +150,7 @@ def extractor(file_pdf_path: str, root_path: str, test_answer_key_path: Optional
 
                             if question_alternatives[len(question_alternatives)-1]["alternative_value"] == 4:
                                 # EOQ end of question
-                                questions.append({
-                                        "number": actual_question,
-                                        "content": question_content,
-                                        "alternatives": question_alternatives
-                                })
+                                _save_question(questions, actual_question, question_content, question_alternatives)
                                 actual_question = None
                                 question_content = []
                                 question_alternatives = {}
@@ -168,12 +192,30 @@ def extractor(file_pdf_path: str, root_path: str, test_answer_key_path: Optional
 
                         new_path = rename_file(data["imagePath"], f"question-{actual_question}")
                         if new_path:
-                            question_content.append({
-                                    "type": "image",
-                                    "content": new_path if new_path else data["imagePath"]
-                                })
+                            image_entry = {
+                                "type": "image",
+                                "content": new_path if new_path else data["imagePath"]
+                            }
+
+                            # If alternatives are open, add image to the current alternative
+                            if question_alternatives:
+                                last_alt_key = len(question_alternatives) - 1
+                                question_alternatives[last_alt_key]["content"].append(image_entry)
+
+                                # Check for EOQ: alt E (index 4) with image content
+                                if _has_alternative_content(question_alternatives):
+                                    _save_question(questions, actual_question, question_content, question_alternatives)
+                                    actual_question = None
+                                    question_content = []
+                                    question_alternatives = {}
+                            else:
+                                question_content.append(image_entry)
 
                         break
+
+    # Save any remaining open question at the end of the document
+    if actual_question is not None and question_alternatives:
+        _save_question(questions, actual_question, question_content, question_alternatives)
     
     if img_data.__len__() > 0:
         for data in img_data:
